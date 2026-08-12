@@ -10,7 +10,11 @@ from minivllm.scheduler import Scheduler
 
 
 class LLMEngine:
-    """Synchronous inference engine skeleton."""
+    """Synchronous inference engine.
+
+    Stage one exposes correctness-first single-request generation. Request
+    scheduling is retained for the later continuous-batching milestone.
+    """
 
     def __init__(self, config: EngineConfig, num_gpu_blocks: int = 1024) -> None:
         self.config = config
@@ -20,6 +24,12 @@ class LLMEngine:
 
     def add_request(self, request: Request) -> None:
         self.scheduler.add_request(request)
+
+    def load_model(self) -> None:
+        self.model_runner.load_model()
+
+    def generate(self, prompt: str, max_new_tokens: int = 16) -> str:
+        return self.model_runner.generate(prompt, max_new_tokens=max_new_tokens)
 
     def step(self) -> list[Request]:
         """Run one scheduling + execution step.

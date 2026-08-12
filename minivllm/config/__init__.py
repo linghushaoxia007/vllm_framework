@@ -10,7 +10,8 @@ class ModelConfig:
     """Model identity and architecture settings."""
 
     model: str
-    dtype: str = "bfloat16"
+    dtype: str = "auto"
+    device: str = "auto"
     max_model_len: int = 4096
     trust_remote_code: bool = False
 
