@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
@@ -59,9 +58,7 @@ class RotaryEmbedding(nn.Module):
     def __init__(self, head_dim: int, max_position_embeddings: int, base: float) -> None:
         super().__init__()
         del max_position_embeddings  # Frequencies are generated lazily for exact positions.
-        inv_freq = 1.0 / (
-            base ** (torch.arange(0, head_dim, 2, dtype=torch.float32) / head_dim)
-        )
+        inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2, dtype=torch.float32) / head_dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, position_ids: Tensor, dtype: torch.dtype) -> tuple[Tensor, Tensor]:
@@ -82,9 +79,7 @@ def apply_rotary_pos_emb(
 ) -> tuple[Tensor, Tensor]:
     cos = cos.unsqueeze(1)
     sin = sin.unsqueeze(1)
-    return (query * cos) + (rotate_half(query) * sin), (key * cos) + (
-        rotate_half(key) * sin
-    )
+    return (query * cos) + (rotate_half(query) * sin), (key * cos) + (rotate_half(key) * sin)
 
 
 def repeat_kv(hidden_states: Tensor, num_key_value_groups: int) -> Tensor:
@@ -94,9 +89,7 @@ def repeat_kv(hidden_states: Tensor, num_key_value_groups: int) -> Tensor:
     hidden_states = hidden_states[:, :, None, :, :].expand(
         batch, num_kv_heads, num_key_value_groups, seq_len, head_dim
     )
-    return hidden_states.reshape(
-        batch, num_kv_heads * num_key_value_groups, seq_len, head_dim
-    )
+    return hidden_states.reshape(batch, num_kv_heads * num_key_value_groups, seq_len, head_dim)
 
 
 class LlamaAttention(nn.Module):
@@ -169,9 +162,7 @@ class LlamaAttention(nn.Module):
 
         attention_weights = torch.matmul(query, repeated_key.transpose(2, 3)) * self.scaling
         key_positions = torch.arange(key.shape[-2], device=hidden_states.device)
-        query_positions = past_length + torch.arange(
-            query_length, device=hidden_states.device
-        )
+        query_positions = past_length + torch.arange(query_length, device=hidden_states.device)
         causal_mask = key_positions.unsqueeze(0) > query_positions.unsqueeze(1)
         attention_weights = attention_weights.masked_fill(
             causal_mask.view(1, 1, query_length, key.shape[-2]),
@@ -181,8 +172,8 @@ class LlamaAttention(nn.Module):
             query.dtype
         )
         attention_output = torch.matmul(attention_weights, repeated_value)
-        attention_output = attention_output.transpose(1, 2).contiguous().view(
-            batch_size, query_length, -1
+        attention_output = (
+            attention_output.transpose(1, 2).contiguous().view(batch_size, query_length, -1)
         )
         return self.o_proj(attention_output), present
 
@@ -263,14 +254,14 @@ class LlamaModel(nn.Module):
 
         hidden_states = self.embed_tokens(input_ids)
         next_cache = (
-            cache if cache is not None else ContiguousKVCache.empty(len(self.layers))
-        ) if use_cache else None
+            (cache if cache is not None else ContiguousKVCache.empty(len(self.layers)))
+            if use_cache
+            else None
+        )
 
         for layer_idx, layer in enumerate(self.layers):
             past_key_value = None if cache is None else cache.layers[layer_idx]
-            hidden_states, present = layer(
-                hidden_states, position_ids, past_key_value, use_cache
-            )
+            hidden_states, present = layer(hidden_states, position_ids, past_key_value, use_cache)
             if next_cache is not None:
                 next_cache.layers[layer_idx] = present
 
@@ -284,6 +275,9 @@ class MiniLlamaForCausalLM(nn.Module):
 
     def __init__(self, config: LlamaConfig) -> None:
         super().__init__()
+        rope_config = getattr(config, "rope_scaling", None)
+        if rope_config is not None and rope_config.get("rope_type", "default") != "default":
+            raise ValueError("RoPE scaling is not supported by the stage-one baseline")
         self.config = config
         self.model = LlamaModel(config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)

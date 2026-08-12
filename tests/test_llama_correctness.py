@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import torch
-from transformers import LlamaConfig, LlamaForCausalLM
+from tokenizers import Tokenizer
+from tokenizers.models import WordLevel
+from tokenizers.pre_tokenizers import Whitespace
+from transformers import LlamaConfig, LlamaForCausalLM, PreTrainedTokenizerFast
 
 from minivllm.config import ModelConfig
 from minivllm.model_executor import MiniLlamaForCausalLM, ModelRunner
@@ -66,15 +71,9 @@ def test_prefill_and_cached_decode_match_huggingface(
     assert prefill.cache is not None
     assert decode.cache is prefill.cache
     assert decode.cache.num_tokens == 5
-    torch.testing.assert_close(
-        prefill.logits, hf_prefill.logits.float(), rtol=1e-4, atol=1e-5
-    )
-    torch.testing.assert_close(
-        decode.logits, hf_decode.logits.float(), rtol=1e-4, atol=1e-5
-    )
-    torch.testing.assert_close(
-        decode.logits[:, -1], full.logits[:, -1], rtol=1e-4, atol=1e-5
-    )
+    torch.testing.assert_close(prefill.logits, hf_prefill.logits.float(), rtol=1e-4, atol=1e-5)
+    torch.testing.assert_close(decode.logits, hf_decode.logits.float(), rtol=1e-4, atol=1e-5)
+    torch.testing.assert_close(decode.logits[:, -1], full.logits[:, -1], rtol=1e-4, atol=1e-5)
 
 
 def test_runner_greedy_generation_matches_reference(
@@ -120,3 +119,40 @@ def test_cache_layout_and_size(tiny_hf_llama: LlamaForCausalLM) -> None:
     assert key.shape == expected_shape
     assert value.shape == expected_shape
     assert cache_size_bytes(output.cache) > 0
+
+
+def test_runner_loads_huggingface_model_and_tokenizer(
+    tiny_hf_llama: LlamaForCausalLM,
+    tmp_path: Path,
+) -> None:
+    tiny_hf_llama.save_pretrained(tmp_path)
+    backend = Tokenizer(
+        WordLevel(
+            {
+                "<pad>": 0,
+                "<bos>": 1,
+                "<eos>": 2,
+                "<unk>": 3,
+                "hello": 4,
+            },
+            unk_token="<unk>",
+        )
+    )
+    backend.pre_tokenizer = Whitespace()
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_object=backend,
+        pad_token="<pad>",
+        bos_token="<bos>",
+        eos_token="<eos>",
+        unk_token="<unk>",
+    )
+    tokenizer.save_pretrained(tmp_path)
+
+    runner = ModelRunner(
+        ModelConfig(model=str(tmp_path), dtype="float32", device="cpu", max_model_len=16)
+    )
+    runner.load_model()
+
+    assert runner.model is not None
+    assert runner.tokenizer is not None
+    assert runner.tokenizer.encode("hello", add_special_tokens=False) == [4]

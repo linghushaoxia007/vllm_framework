@@ -51,7 +51,8 @@ class ModelRunner:
         try:
             return supported[dtype]
         except KeyError as exc:
-            raise ValueError(f"Unsupported dtype {dtype!r}; choose one of {sorted(supported)}") from exc
+            choices = sorted(supported)
+            raise ValueError(f"Unsupported dtype {dtype!r}; choose one of {choices}") from exc
 
     def load_model(self) -> None:
         """Load Hugging Face weights/tokenizer and copy them into MiniLlama."""
@@ -60,7 +61,7 @@ class ModelRunner:
 
         hf_model = AutoModelForCausalLM.from_pretrained(
             self.config.model,
-            torch_dtype=self.dtype,
+            dtype=self.dtype,
             trust_remote_code=self.config.trust_remote_code,
         )
         self.load_huggingface_model(hf_model)
